@@ -1,0 +1,172 @@
+---
+title: "Midterm Exam"
+author: "Jingyi Niu"
+date: "11/2/2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Instruction
+
+This is your midterm exam that you are expected to work on it alone.  You may NOT  discuss any of the content of your exam with anyone except your instructor. This includes text, chat, email and other online forums.  We expect you to respect and follow the [GRS Academic and Professional Conduct Code](http://www.bu.edu/cas/files/2017/02/GRS-Academic-Conduct-Code-Final.pdf). 
+
+Although you may NOT ask anyone directly, you are allowed to use external resources such as R codes on the Internet.  If you do use someone's code, please make sure you clearly cite the origin of the code.
+
+When you finish, please compile and submit the PDF file and the link to the GitHub repository that contains the entire analysis.
+
+
+## Introduction
+
+In this exam, you will act as both the client and the consultant for the data that you collected in the data collection exercise (20pts).  Please note that you are not allowed to change the data.  The goal of this exam is to demonstrate your ability to perform the statistical analysis that you learned in this class so far.  It is important to note that significance of the analysis is not the main goal of this exam but the focus is on the appropriateness of your approaches.
+```{r }
+# load library
+library(stringr)
+library(ggplot2)
+library(cowplot)
+```
+
+### Data Description (10pts)
+
+Please explain what your data is about and what the comparison of interest is.  In the process, please make sure to demonstrate that you can load your data properly into R.
+
+**Explain**
+My question is that how will the roles and time I chose to play the game Honor of Kings influence my win rate, based on this question I collected all my record data from 10-23 to 10-04 to see whether there is any relationship between variables. To improve the reliability, I collect data from qualifying not arcade mode.
+I select qualifying and collect the KDA information as well as the time and character name.
+```{r }
+data <- read.csv("C:/Users/dell/Desktop/data_collection.csv")
+dim(data)
+```
+
+After reading dataset, I extract the hour of the date from the time, which is more convenient for analysis.
+```{r }
+data$date <- str_sub(data$time,1,5)
+data$hours <- str_sub(data$time,7,8)
+```
+
+In order to show the data better, I output the data overview.The meanings of each field are as follows:  
+1. character: Hero name. There are 16 types in this dataset.  
+2. position: Hero positioning. There are four types of "Mid", "Sup", "Top" and "Bot"  
+3. kill: I kill the number of hero in the game.  
+4. death: I am killed the number of hero in the game.  
+5. assist: I helped my teammates kill the hero count.  
+6. win: Victory or not.One means victory, nine means defeat.  
+7. time: Game start time.  
+8. date: Game start date.  
+9. hours: Game start hours.  
+```{r }
+data$hours <- as.integer(data$hours)
+factorVar <- c("character","position","date")
+for(var in factorVar){
+  data[,var] <- as.factor(data[,var])
+}
+summary(data)
+```
+
+
+### EDA (10pts)
+Please create one (maybe two) figure(s) that highlights the contrast of interest.  Make sure you think ahead and match your figure with the analysis.  For example, if your model requires you to take a log, make sure you take log in the figure as well.
+
+First, I explored the number of wins and losses on different dates and their relative proportions.
+```{r }
+p1 <- ggplot(data, aes(x=date)) +   
+  geom_bar(aes(fill=as.factor(win)))
+p2 <- ggplot(data, aes(x=date)) +   
+  geom_bar(aes(fill=as.factor(win)),position='fill')
+plot_grid(p1,p2,ncol=1)
+```
+
+Then, I explored the number of wins and losses in different positions and their relative proportions.
+```{r }
+p1 <- ggplot(data, aes(x=position)) +   
+  geom_bar(aes(fill=as.factor(win)))
+p2 <- ggplot(data, aes(x=position)) +   
+  geom_bar(aes(fill=as.factor(win)),position='fill')
+plot_grid(p1,p2,ncol=1)
+```
+
+Finally, I explored the number of winning and losing games and their relative proportions in different time periods.
+```{r }
+p1 <- ggplot(data, aes(x=hours)) +   
+  geom_bar(aes(fill=as.factor(win)))
+p2 <- ggplot(data, aes(x=hours)) +   
+  geom_bar(aes(fill=as.factor(win)),position='fill')
+plot_grid(p1,p2,ncol=1)
+```
+
+### Power Analysis (10pts)
+Please perform power analysis on the project.  Use 80% power, the sample size you used and infer the level of effect size you will be able to detect.  Discuss whether your sample size was enough for the problem at hand.  Please note that method of power analysis should match the analysis.  Also, please clearly state why you should NOT use the effect size from the fitted model.  
+```{r }
+set.seed(202011)
+data$gp <- runif(dim(data)[1])
+dataTrain <-subset(data,data$gp <= 0.8)
+dataTest <-subset(data,data$gp > 0.8)
+```
+
+
+### Modeling (10pts)
+
+Please pick a regression model that best fits your data and fit your model.  Please make sure you describe why you decide to choose the model. Also, if you are using GLM, make sure you explain your choice of link function as well.
+
+In order to predict the outcome, I used logistic regression model.
+```{r warning=FALSE}
+model <-glm(win~position+kill+death+assist+date+hours, data=dataTrain, family=binomial(link="logit"))
+model_step<-step(model)
+
+dataTrain$LOG_pred <- predict(model_step, newdata=dataTrain, type="response")
+dataTest$LOG_pred <- predict(model_step, newdata=dataTest, type="response")
+```
+
+### Validation (10pts)
+Please perform a necessary validation and argue why your choice of the model is appropriate.  
+
+Next, I verify the regression results of the model.  
+```{r }
+loglikelihood<-function(y, py) {    
+  pysmooth<-ifelse(py==0, 1e-12, ifelse(py==1, 1-1e-12, py))
+  sum(y * log(pysmooth) + (1-y)*log(1 -pysmooth))   
+}
+accuracyMeasures<-function(pred, truth, name="model",value=0.5) {   
+  dev.norm<--2*loglikelihood(as.numeric(truth), pred)/length(pred)
+  ctable<-table(truth==1,pred=(pred>value))
+  accuracy <-sum(diag(ctable))/sum(ctable)
+  precision <-ctable[2,2]/sum(ctable[,2])
+  recall <-ctable[2,2]/sum(ctable[2,])
+  f1 <-2*precision*recall/(precision+recall)
+  data.frame(model=name, accuracy=accuracy,precision=precision,recall=recall, f1=f1, dev.norm)  
+}
+accuracyMeasures(dataTest$LOG_pred,dataTest$win)
+```
+
+
+### Inference (10pts)
+
+Based on the result so far please perform statistical inference to compare the comparison of interest.
+
+This part outputs the model results, and the regression results can be seen intuitively.
+```{r }
+summary(model_step)
+```
+
+
+### Discussion (10pts)
+Please clearly state your conclusion and the implication of the result.
+
+From the regression results:  
+1. Kill count is a positive factor in winning 
+2. The number of deaths has a negative effect on success  
+
+### Limitations and future opportunity. (10pts)
+Please list concerns about your analysis.  Also, please state how you might go about fixing the problem in your future study.
+1. The amount of data is too small to conduct a comprehensive study.  
+2. Multicollinearity exists between data, such as the position of class variables.  
+3. Hours variables should be treated as categories. Due to the small amount of data, dividing the training set and the test set cannot meet the requirements of stratified sampling.  
+
+### Comments or questions
+If you have any comments or questions, please write them here.
+
